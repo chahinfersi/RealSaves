@@ -1,0 +1,19 @@
+{
+  "name": "reel-saves",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ingest + storage API for saved Instagram reels (phase 1).",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "local": "node --env-file=.env dev-server.js",
+    "deploy": "vercel --prod",
+    "test:parse": "node lib/parseLink.js"
+  },
+  "dependencies": {
+    "mongodb": "^6.10.0"
+  }
+}
