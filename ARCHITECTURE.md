@@ -82,12 +82,17 @@ stateDiagram-v2
 
 ## 5. Schema evolution
 
-**Phase 1 (built) — already stores everything the pipeline needs to start:**
+**Phase 1 (built, multi-tenant) — already stores everything the pipeline needs to start:**
 
 ```
-platform, contentId, dedupKey, resolved, url, rawUrl,
+owner, platform, contentId, dedupKey, resolved, url, rawUrl,
 note, source, capturedAt, status, read, transcript
 ```
+
+Every save carries an **`owner`** (from the user's API key). The unique index is compound
+`{owner, dedupKey}` and *partial* (only where `dedupKey` is a string), so each user dedups
+within their own reels and unparsed rows never collide. See `README.md` for the multi-tenant
+auth model (`API_KEYS` = `owner:key` pairs).
 
 **Phase 2 adds (filled by the worker, mostly free from yt-dlp's metadata):**
 
