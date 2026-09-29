@@ -1,0 +1,15 @@
+# Phase 2 worker dependencies. Install with:
+#   pip install -r worker/requirements.txt
+#
+# yt-dlp        — resolves short links + downloads audio-only (needs ffmpeg on PATH)
+# curl_cffi     — TLS impersonation yt-dlp uses to defeat TikTok's anti-bot ("Unexpected
+#                 response from webpage request"). Bundled in the standalone yt-dlp.exe but
+#                 NOT in the plain pip install, so we add it explicitly. Required for TikTok.
+# faster-whisper — local Whisper (CTranslate2) speech-to-text, CPU/int8 friendly
+# pymongo       — talks to the same MongoDB the ingest API writes to
+# python-dotenv — loads the project-root .env (MONGODB_URI, DB_NAME)
+yt-dlp>=2026.8.19
+curl_cffi>=0.16
+faster-whisper>=1.2.1
+pymongo>=4.18
+python-dotenv>=1.2

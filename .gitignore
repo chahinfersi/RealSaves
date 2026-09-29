@@ -4,3 +4,14 @@ node_modules/
 .vercel
 *.log
 .claude/
+
+# Python (worker)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Personal / private — kept local, never open-sourced.
+# The learning journal + notes are for me; the public foundation lives in
+# README.md, ARCHITECTURE.md, and worker/README.md + worker/EXPLAINED.md.
+LEARNING-LOG.md
