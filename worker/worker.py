@@ -58,6 +58,7 @@ def process_one(collection, doc, tmp_dir, model_size, translate):
 
     meta_fields = {
         "title": meta["title"],
+        "caption": meta["caption"],
         "uploader": meta["uploader"],
         "durationSec": meta["durationSec"],
         "thumbnailUrl": meta["thumbnailUrl"],
@@ -107,15 +108,15 @@ def process_one(collection, doc, tmp_dir, model_size, translate):
         except OSError:
             pass
 
-    db.mark_ready(
-        collection,
-        _id,
-        {
-            "transcript": result["text"],
-            "transcriptLang": result["language"],
-            "segments": result["segments"],
-        },
-    )
+    ready_fields = {
+        "transcript": result["text"],
+        "transcriptLang": result["language"],
+        "segments": result["segments"],
+    }
+    # Instagram reports no duration in its metadata; Whisper measured the audio, so use that.
+    if meta["durationSec"] is None and result.get("duration"):
+        ready_fields["durationSec"] = round(result["duration"])
+    db.mark_ready(collection, _id, ready_fields)
     return "ready"
 
 

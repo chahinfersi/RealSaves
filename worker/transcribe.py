@@ -26,7 +26,10 @@ def get_model(model_size="small"):
 
 
 def transcribe(audio_path, model_size="small", translate=False):
-    """Transcribe `audio_path`. Returns {text, language, segments:[{start,end,text}]}.
+    """Transcribe `audio_path`. Returns {text, language, duration, segments:[{start,end,text}]}.
+
+    `duration` is the audio length in seconds, measured by Whisper while decoding. The
+    worker uses it when the platform didn't report one (Instagram never does).
 
     vad_filter trims silence/music-only stretches, which cuts the hallucinated text
     Whisper otherwise invents over non-speech audio (common in reels with background music).
@@ -49,5 +52,6 @@ def transcribe(audio_path, model_size="small", translate=False):
     return {
         "text": " ".join(parts).strip(),
         "language": info.language,
+        "duration": info.duration,
         "segments": seg_list,
     }

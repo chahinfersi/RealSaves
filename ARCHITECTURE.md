@@ -97,9 +97,10 @@ auth model (`API_KEYS` = `owner:key` pairs).
 **Phase 2 adds (filled by the worker, mostly free from yt-dlp's metadata):**
 
 ```
-title            // video title / caption
+title            // yt-dlp's title (a placeholder on Instagram: "Video by <handle>")
+caption          // the post's real caption (yt-dlp `description`), used for display/relevance
 uploader         // @handle / page
-durationSec      // length
+durationSec      // length (Instagram reports none → measured from the audio)
 thumbnailUrl     // preview image
 transcript       // ← the whole point: the text
 transcriptLang   // detected language (e.g. "en", "ar")

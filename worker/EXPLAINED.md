@@ -110,19 +110,24 @@ flowchart LR
 
 **What `extract_info(url)` returns** (built by `_summarize` in resolve.py):
 ```
-{ id, platform, webpageUrl, title, uploader, durationSec, thumbnailUrl }
+{ id, platform, webpageUrl, title, caption, uploader, durationSec, thumbnailUrl }
 ```
+`caption` = yt-dlp's `description` (the real post caption on every platform); `title` is
+kept but is a placeholder on Instagram. `durationSec` is `None` for Instagram.
 
 **What `transcribe(path)` returns:**
 ```
 { text: "the whole transcript…",
   language: "en",           # auto-detected
+  duration: 29.4,           # audio length in seconds, measured by Whisper
   segments: [ {start, end, text}, … ] }   # timestamped lines
 ```
 
 **What `mark_ready` writes onto the row:**
 ```
-{ transcript, transcriptLang, segments, status:"ready", processedAt, error:null }
+{ transcript, transcriptLang, segments, status:"ready", processedAt, error:null
+  [, durationSec]   # only when the platform gave none → from transcribe()'s duration
+}
 ```
 
 ---
@@ -187,7 +192,8 @@ field — and the worker moves on.
 | resolve.py | `extract_info(url)` | a link | info dict (no download) |
 | resolve.py | `download_audio(url, dir)` | a link + temp folder | path to an `.mp3` |
 | transcribe.py | `get_model(size)` | model size | loaded Whisper model (cached) |
-| transcribe.py | `transcribe(path, …)` | an mp3 path | `{text, language, segments}` |
+| transcribe.py | `transcribe(path, …)` | an mp3 path | `{text, language, duration, segments}` |
+| backfill.py | `backfill_one(col, doc, tmp)` | one `ready` row | the `caption` / `durationSec` it added |
 | worker.py | `process_one(col, doc, …)` | one claimed reel | `"ready"` / `"duplicate"` (or raises) |
 | worker.py | `main()` | CLI options | — (runs the loop, prints summary) |
 

@@ -13,14 +13,16 @@ once it has burned through `MAX_ATTEMPTS`), so nothing is orphaned. Then, for ev
 
 1. **Claims** it atomically (`pending → processing`) so two runs never grab the same reel.
 2. **Resolves** it with `yt-dlp` — follows the short-link redirect to the real numeric id +
-   `title`, `uploader`, `duration`, `thumbnail`.
+   `title`, `caption` (the post's real caption, from yt-dlp's `description`), `uploader`,
+   `duration`, `thumbnail`.
 3. **Reconciles dedup** — TikTok/Facebook short codes become `platform:<realid>`, `resolved:true`.
    If the same video already exists for that owner (shared via two codes), it drops the
    duplicate and keeps the note.
 4. **Downloads audio-only** (`yt-dlp` + ffmpeg → mp3).
 5. **Transcribes** with local Whisper (`faster-whisper`, `small`, CPU/int8).
 6. Writes `transcript`, `transcriptLang`, `segments` + metadata and flips to `ready`; deletes
-   the temp audio.
+   the temp audio. If the platform reported no duration (Instagram never does), `durationSec`
+   is taken from the audio length Whisper measured.
 
 A login/permission wall (Facebook especially) or any error → `status: "failed"` with a reason
 in `error`. It never stores a garbage id and never crashes the whole run over one bad row.
@@ -54,6 +56,22 @@ the next job stays instant as the collection grows.
 > **ffmpeg not on PATH?** Set `FFMPEG_LOCATION` to its `bin` directory and the worker will
 > pass it to yt-dlp.
 
+## Backfill (rows transcribed before a new field existed)
+
+[`backfill.py`](backfill.py) gives already-`ready` reels the fields newer worker versions
+store — today `caption` and `durationSec` — **without re-transcribing**. It only adds those
+two fields (never touches `status` or the transcript), so a reel that has since disappeared is
+simply skipped. Rows already complete aren't selected, so re-running it is harmless.
+
+```bash
+python worker/backfill.py --dry-run   # list what would change, no network calls
+python worker/backfill.py --limit 2   # try a couple first
+python worker/backfill.py             # do them all
+```
+
+Captions come from metadata only (no download); Instagram durations need the audio, so those
+rows download it, measure its length, and delete it.
+
 ## Automated runs (Windows Task Scheduler)
 
 A scheduled task named **`RealSaves Worker`** runs [`run-worker.ps1`](run-worker.ps1) every
@@ -84,3 +102,7 @@ cloud VM (datacenter IPs get blocked; the home IP is the whole point).
 - **`--loop` mode** — a continuous poll instead of run-once (Task Scheduler covers this for now).
 - **Move to an always-on home device** — a Raspberry Pi keeps the residential IP and removes
   the "PC must be on" limit.
+- **Better Arabic-dialect transcripts** — `small` mishears tech words in Tunisian/Egyptian
+  reels ("NLMS" for LLMs). Deferred: Claude understands them from context; revisit (e.g.
+  `large-v3-turbo` or an `initial_prompt` with tech vocabulary) when keyword/vector search
+  makes exact words matter.

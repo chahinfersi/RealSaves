@@ -100,14 +100,31 @@ def download_audio(url, out_dir):
     raise ResolveError("audio download produced no file")
 
 
+# Invisible Unicode direction marks apps wrap around right-to-left (Arabic) text, e.g.
+# "⁨\t⁨\tاكتب…". Harmless on screen, but noise for search and for Claude.
+_EDGE_JUNK = " \t\r\n‎‏⁦⁧⁨⁩"
+
+
+def clean_caption(text):
+    """Trim whitespace + invisible direction marks from both ends of a caption."""
+    return (text or "").strip(_EDGE_JUNK)
+
+
 def _summarize(info):
-    """Pull just the fields we store from yt-dlp's large info dict."""
+    """Pull just the fields we store from yt-dlp's large info dict.
+
+    `caption` comes from `description`: it's the post's full, clean caption on all three
+    platforms, while `title` is a placeholder on Instagram ("Video by <handle>"), cut short
+    with "..." on TikTok, and prefixed with "22K views · 646 reactions |" on Facebook.
+    Instagram reports no `duration` at all; the worker fills it from the audio later.
+    """
     duration = info.get("duration")
     return {
         "id": str(info.get("id")) if info.get("id") is not None else None,
         "platform": info.get("extractor_key", "").lower() or None,
         "webpageUrl": info.get("webpage_url"),
         "title": info.get("title"),
+        "caption": clean_caption(info.get("description")) or info.get("title"),
         "uploader": info.get("uploader") or info.get("uploader_id"),
         "durationSec": int(duration) if isinstance(duration, (int, float)) else None,
         "thumbnailUrl": info.get("thumbnail"),
