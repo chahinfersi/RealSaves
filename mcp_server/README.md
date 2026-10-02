@@ -28,12 +28,21 @@ python -m pip install -r mcp_server/requirements.txt
 
 `MONGODB_URI` and `DB_NAME` come from the project-root `.env` (same as the API and worker).
 **Whose reels** comes from the `REALSAVES_OWNER` env var: the server refuses to start
-without it.
+without it. Its value is your owner name, the part before `:` in your `API_KEYS` entry
+(`<owner>:<key>`, see the root `README.md`).
+
+In the commands below, replace the placeholders with your own values:
+
+| Placeholder | What it is | How to find it |
+|---|---|---|
+| `<owner>` | your owner name | the `owner` part of your `API_KEYS` entry |
+| `<python.exe>` | full path to your Python | `python -c "import sys; print(sys.executable)"` |
+| `<repo>` | full path to this repo | the folder you cloned it into |
 
 ## 1. Run it directly (and see that it "does nothing")
 
 ```powershell
-$env:REALSAVES_OWNER = "fersi"; python mcp_server/server.py
+$env:REALSAVES_OWNER = "<owner>"; python mcp_server/server.py
 ```
 
 It prints one line to stderr, then **sits silently**: a stdio server waits for JSON
@@ -45,7 +54,7 @@ The Inspector is a small web UI that acts as an MCP client, so you can see the r
 messages. `-e` passes the env var to the server:
 
 ```bash
-npx @modelcontextprotocol/inspector -e REALSAVES_OWNER=fersi "C:\Users\fersi\AppData\Local\Programs\Python\Python312\python.exe" mcp_server/server.py
+npx @modelcontextprotocol/inspector -e REALSAVES_OWNER=<owner> "<python.exe>" mcp_server/server.py
 ```
 
 Connect → **Tools** → list them, run them, and read the JSON in the **Protocol** panel.
@@ -59,13 +68,16 @@ Open **Claude Desktop → Settings → Developer → Edit Config**; the `realsav
 {
   "mcpServers": {
     "realsaves": {
-      "command": "C:\\Users\\fersi\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-      "args": ["C:\\Users\\fersi\\Desktop\\RealSave\\mcp_server\\server.py"],
-      "env": { "REALSAVES_OWNER": "fersi" }
+      "command": "<python.exe>",
+      "args": ["<repo>\\mcp_server\\server.py"],
+      "env": { "REALSAVES_OWNER": "<owner>" }
     }
   }
 }
 ```
+
+For example, `"command": "C:\\Users\\you\\AppData\\Local\\Programs\\Python\\Python312\\python.exe"`.
+In JSON every backslash is written **twice** (`\\`), because `\` starts an escape sequence.
 
 (If the file already has other keys, add `mcpServers` next to them; don't replace the file.)
 
