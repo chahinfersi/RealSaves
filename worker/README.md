@@ -1,7 +1,7 @@
 # RealSaves Worker (Phase 2)
 
 The local worker that finishes each saved reel: **resolve → download audio → transcribe →
-`ready`**. It runs on your machine (home IP) and talks to the same MongoDB the ingest API
+embed → `ready`**. It runs on your machine (home IP) and talks to the same MongoDB the ingest API
 writes to. See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §6–8 for the why.
 
 ## What it does
@@ -20,7 +20,11 @@ once it has burned through `MAX_ATTEMPTS`), so nothing is orphaned. Then, for ev
    duplicate and keeps the note.
 4. **Downloads audio-only** (`yt-dlp` + ffmpeg → mp3).
 5. **Transcribes** with local Whisper (`faster-whisper`, `small`, CPU/int8).
-6. Writes `transcript`, `transcriptLang`, `segments` + metadata and flips to `ready`; deletes
+6. **Embeds** caption + note + transcript for vector search (Phase 3): a local bge-m3 model
+   turns the text into `embedding` (1024 numbers) + `embeddingModel`, see
+   [`../shared/README.md`](../shared/README.md). If this step fails, the reel still becomes
+   `ready` (the transcript matters most) and `embed_backfill.py` adds the vector later.
+7. Writes `transcript`, `transcriptLang`, `segments` + metadata and flips to `ready`; deletes
    the temp audio. If the platform reported no duration (Instagram never does), `durationSec`
    is taken from the audio length Whisper measured.
 
@@ -72,6 +76,21 @@ python worker/backfill.py             # do them all
 Captions come from metadata only (no download); Instagram durations need the audio, so those
 rows download it, measure its length, and delete it.
 
+## Embedding backfill (vector search)
+
+[`embed_backfill.py`](embed_backfill.py) gives `ready` reels their vector: every `ready` row
+whose `embeddingModel` isn't the current model, which covers rows from before Phase 3 *and*
+a later model change. It only sets `embedding`, `embeddingModel`, `embeddedAt`, runs fully
+locally (no platform contact), and is safe to re-run.
+
+```bash
+python worker/embed_backfill.py --dry-run   # count, write nothing
+python worker/embed_backfill.py --limit 4   # try a few first
+python worker/embed_backfill.py             # do them all (~2 s per reel on CPU)
+```
+
+The first run downloads the model once (~2.3 GB, cached by Hugging Face).
+
 ## Automated runs (Windows Task Scheduler)
 
 A scheduled task named **`RealSaves Worker`** runs [`run-worker.ps1`](run-worker.ps1) every
@@ -104,5 +123,8 @@ cloud VM (datacenter IPs get blocked; the home IP is the whole point).
   the "PC must be on" limit.
 - **Better Arabic-dialect transcripts** — `small` mishears tech words in Tunisian/Egyptian
   reels ("NLMS" for LLMs). Deferred: Claude understands them from context; revisit (e.g.
-  `large-v3-turbo` or an `initial_prompt` with tech vocabulary) when keyword/vector search
-  makes exact words matter.
+  `large-v3-turbo` or an `initial_prompt` with tech vocabulary) if search quality on Arabic
+  reels turns out to suffer. (So far vector search copes: it matches on meaning, not exact
+  words.)
+- **"Key ideas" per reel** — have the worker write 3–5 bullet points once, so `get_reel` can
+  return those instead of the full transcript and save tokens in every chat.

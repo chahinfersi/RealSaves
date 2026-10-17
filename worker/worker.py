@@ -1,8 +1,8 @@
 """RealSaves Phase 2 worker (run-once).
 
 Finishes the job the ingest API deliberately left undone: for every `pending` row it
-resolves the real video, downloads audio-only, transcribes it locally with Whisper, and
-writes the transcript back with status `ready`. Processes everything waiting, prints a
+resolves the real video, downloads audio-only, transcribes it locally with Whisper, embeds
+the text for vector search, and writes it all back with status `ready`. Processes everything waiting, prints a
 summary, and exits.
 
 Run it (from the project root):
@@ -37,6 +37,7 @@ from pymongo.errors import DuplicateKeyError
 import db
 import resolve
 import transcribe
+import vectors
 
 
 def process_one(collection, doc, tmp_dir, model_size, translate):
@@ -116,6 +117,13 @@ def process_one(collection, doc, tmp_dir, model_size, translate):
     # Instagram reports no duration in its metadata; Whisper measured the audio, so use that.
     if meta["durationSec"] is None and result.get("duration"):
         ready_fields["durationSec"] = round(result["duration"])
+
+    # 6. Embed for vector search (Phase 3). A failure here must not lose the transcript:
+    #    the reel still becomes ready, and worker/embed_backfill.py adds the vector later.
+    try:
+        ready_fields.update(vectors.embedding_fields([{**doc, **meta_fields, **ready_fields}])[0])
+    except Exception as err:
+        print(f"[worker] ! embedding skipped ({err}); run worker/embed_backfill.py later")
     db.mark_ready(collection, _id, ready_fields)
     return "ready"
 

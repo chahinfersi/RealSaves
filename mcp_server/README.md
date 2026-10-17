@@ -6,17 +6,22 @@ Claude Desktop starts it as a child process and talks to it over **stdio**. See
 [`EXPLAINED.md`](EXPLAINED.md) for how this code works (with diagrams), and
 [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §9 for where it fits.
 
-> **Status: step 2 — first real tools.** Two read-only tools over the `saves` collection.
-> Next: `mark_read` + the proactive greeting (step 3).
+> **Status: vector search.** Three read-only tools over the `saves` collection. Claude finds
+> reels related to the task you start a chat with (`find_reels`), asks you, then reads them
+> (`get_reel`) and applies their ideas. This is RAG: see
+> [`../VECTOR-SEARCH-EXPLAINED.md`](../VECTOR-SEARCH-EXPLAINED.md).
 
 ## Tools
 
 | Tool | Input | Returns |
 |---|---|---|
+| `find_reels` | `topic` (one focused sentence), `limit` (1–10, default 5) | reels related to the topic, by meaning and in any language, with a `similarity` score; only those above the threshold (0.50), so it can be empty |
 | `list_new_reels` | `limit` (1–50, default 10) | `total_unread` + short summaries of the newest unread `ready` reels |
 | `get_reel` | `id`, `include_segments` (default false) | one reel in full: transcript, metadata, link (+ timestamped lines if asked) |
 
-Both are marked **read-only** (`readOnlyHint`) and only ever see the reels of one owner.
+`find_reels` embeds the topic with the same local model as the worker
+([`../shared/embedding.py`](../shared/embedding.py)), then runs an Atlas `$vectorSearch`
+pre-filtered on owner, `status: "ready"` and the embedding model. All three are marked **read-only** (`readOnlyHint`) and only ever see the reels of one owner.
 
 ## Setup (one time)
 
@@ -25,6 +30,11 @@ Requires **Python 3.10+** (we use the same 3.12 as the worker).
 ```bash
 python -m pip install -r mcp_server/requirements.txt
 ```
+
+`find_reels` also needs, once (details in [`../shared/README.md`](../shared/README.md)):
+reels embedded (`python worker/embed_backfill.py`) and the Atlas vector index `reels_vector`
+(`python shared/create_vector_index.py`, or the Atlas UI). The server loads the embedding
+model (bge-m3, ~2.3 GB, downloaded on first use) in the background at startup, ~5 s.
 
 `MONGODB_URI` and `DB_NAME` come from the project-root `.env` (same as the API and worker).
 **Whose reels** comes from the `REALSAVES_OWNER` env var: the server refuses to start
@@ -89,11 +99,30 @@ In JSON every backslash is written **twice** (`\\`), because `\` starts an escap
 - After **any** change (config *or* code), **fully quit** Claude Desktop (tray icon → Quit)
   and reopen: it starts the server once, at launch.
 
+## 4. Make Claude search your reels by itself
+
+An MCP server can't speak first: Claude only calls `find_reels` when something tells it to.
+Paste this once in **Claude Desktop → Settings → Profile → Instructions for Claude**
+(called "personal preferences" in older versions). It applies to every chat:
+
+> When my first message in a chat describes a work task or project (for example "today: SEO
+> for our landing page"), call the realsaves `find_reels` tool with one focused search per
+> sub-topic. If it returns reels that really fit, tell me briefly how many and what they're
+> about, and ask whether I want to use them. If I say yes, read them with `get_reel`, but
+> don't show me the transcripts or recap them: extract their core ideas and techniques and
+> apply them directly to my task, mentioning in a few words which reel each idea comes from.
+> If none fit, don't mention reels. Don't do this for greetings or casual chat.
+
+This only covers Claude Desktop chats. Claude Code has its own MCP config (`claude mcp add`)
+and reads instructions from `CLAUDE.md`.
+
 ## Logs
 
 Anything the server writes to **stderr** is captured by Claude Desktop. To read it:
-**Settings → Developer → realsaves → Show logs**. (In the Microsoft Store build, no
-`mcp-server-realsaves.log` file shows up in the `logs\` folder, so use the button.)
+**Settings → Developer → realsaves → Show logs**. The file itself is
+`mcp-server-realsaves.log`, in `%LOCALAPPDATA%\Claude\logs\` (current builds). Every
+`find_reels` call logs its query and how many reels passed the threshold, handy to see what
+Claude actually searched for.
 
 While developing, the **Inspector's Console tab** shows the same stderr lines live.
 

@@ -105,7 +105,12 @@ lib/parseLink.js    # platform detection + ID extraction + URL cleaning (has a s
 dev-server.js       # local-only HTTP server (not used by Vercel) — `npm run local`
 .env.example        # MONGODB_URI, DB_NAME, API_KEYS
 vercel.json         # function config
+worker/             # Phase 2: local yt-dlp + Whisper + embeddings (Python) — worker/README.md
+mcp_server/         # Phase 3: MCP server Claude Desktop connects to — mcp_server/README.md
+shared/             # Phase 3: embedding model + evaluation, used by worker and MCP server
 ARCHITECTURE.md     # full system design
+PHASE3-EXPLAINED.md, VECTOR-SEARCH-EXPLAINED.md   # study guides (MCP; embeddings + RAG)
+vector-search-illustration.html                   # clickable data-flow walkthrough
 LEARNING-LOG.md     # roadmap + concepts learned
 ```
 

@@ -8,8 +8,17 @@
 # faster-whisper — local Whisper (CTranslate2) speech-to-text, CPU/int8 friendly
 # pymongo       — talks to the same MongoDB the ingest API writes to
 # python-dotenv — loads the project-root .env (MONGODB_URI, DB_NAME)
+#
+# Phase 3 — embeddings for vector search (../shared/embedding.py). All three already come
+# with faster-whisper; listed so the dependency is explicit:
+# onnxruntime   — runs the embedding model (bge-m3, ONNX export) on CPU, no PyTorch needed
+# tokenizers    — splits text into the model's tokens
+# huggingface_hub — downloads the pinned model revision once (~2.3 GB, cached)
 yt-dlp>=2026.8.19
 curl_cffi>=0.16
 faster-whisper>=1.2.1
 pymongo>=4.18
 python-dotenv>=1.2
+onnxruntime>=1.30
+tokenizers>=0.23
+huggingface_hub>=1.33

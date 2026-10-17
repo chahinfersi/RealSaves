@@ -6,6 +6,11 @@
 #                 Brings pydantic, which we use for the tools' output models.
 # pymongo       — reads the same MongoDB the ingest API writes and the worker fills
 # python-dotenv — loads the project-root .env (MONGODB_URI, DB_NAME)
+# onnxruntime, tokenizers, huggingface_hub — run the embedding model for find_reels
+#                 (../shared/embedding.py, same model as the worker)
 mcp>=2.2
 pymongo>=4.18
 python-dotenv>=1.2
+onnxruntime>=1.30
+tokenizers>=0.23
+huggingface_hub>=1.33

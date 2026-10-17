@@ -1,0 +1,15 @@
+{
+  "note": "Test set for vector search. Copy to eval_topics.json and fill it with YOUR reels (eval_topics.json is gitignored). 'query' = what Claude would search for. 'expected' = _id strings of the reels that SHOULD come back. Empty list = nothing relevant exists (tests the threshold).",
+  "topics": [
+    {
+      "name": "SEO for our landing page",
+      "query": "SEO and GEO for a landing page: ranking on Google and in AI answers",
+      "expected": ["<_id of a reel about SEO>", "<_id of another one>"]
+    },
+    {
+      "name": "(no match) Fix my car engine",
+      "query": "how to repair a car engine that won't start",
+      "expected": []
+    }
+  ]
+}

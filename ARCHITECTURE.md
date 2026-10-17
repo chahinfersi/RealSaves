@@ -1,7 +1,7 @@
 # Reel Saves — End-to-End Architecture
 
 A living reference for the whole system: capture → store → resolve+transcribe → surface in Claude.
-Phase 1 (ingest) is built. Phases 2–3 are the plan.
+Phases 1 (ingest), 2 (worker) and 3 (MCP server + vector search) are built.
 
 ---
 
@@ -11,8 +11,9 @@ You consume a lot of short-form video (Instagram / TikTok / Facebook). Some of i
 useful — hooks, ideas, techniques. Today that value is trapped in a video you'll never scroll back to.
 
 Reel Saves turns it into an **AI-queryable knowledge base**: one-tap capture → background
-transcription → and when you open Claude to work, it proactively tells you *"you have 3 new reels,
-one relates to this project — want to add it?"*
+transcription → and when you open Claude to work on something, it searches your whole library by
+meaning and asks *"I found 3 reels related to SEO, want to use them?"* Reels are a **library, not
+an inbox**: one reel can help in many chats.
 
 The end payoff: **the reel becomes text your AI can reason over while you work.**
 
@@ -31,7 +32,7 @@ flowchart TD
     D -->|"write transcript + real ID, status:ready"| C
 
     C -->|"reads"| F["MCP Server<br/>(LOCAL, reads Atlas)"]
-    F <-->|"tools: list_new / find / get_reel"| G["🧠 Claude<br/>(Desktop / web)"]
+    F <-->|"tools: find_reels / get_reel / list_new_reels"| G["🧠 Claude<br/>(Desktop)"]
 
     style B fill:#2d6a4f,color:#fff
     style D fill:#5a189a,color:#fff
@@ -50,10 +51,10 @@ far less than datacenter IPs. The API and MCP server never touch IG/TikTok/FB at
 | Component | Where it runs | Talks to platforms? | Ban risk | Status |
 |---|---|---|---|---|
 | **iOS Shortcut** | Your phone | No | none | ✅ working |
-| **Ingest API** (`/api/saves`) | Vercel (serverless) | No — only stores | **none** | ✅ built (deploy pending) |
-| **MongoDB Atlas** | Cloud (M0 free) | No | none | pending |
-| **Worker** (resolve + transcribe) | **Local machine** | Yes — yt-dlp + audio download | low (home IP, low volume) | phase 2 |
-| **MCP Server** | **Local** (Claude connects) | No — reads Atlas | none | phase 3 |
+| **Ingest API** (`/api/saves`) | Vercel (serverless) | No — only stores | **none** | ✅ built |
+| **MongoDB Atlas** | Cloud (M0 free) | No | none | ✅ in use (+ vector index) |
+| **Worker** (resolve + transcribe + embed) | **Local machine** | Yes — yt-dlp + audio download | low (home IP, low volume) | ✅ built |
+| **MCP Server** | **Local** (Claude connects) | No — reads Atlas | none | ✅ built |
 
 Atlas is the **shared hand-off**: the API writes rows; the worker and MCP server read/update them.
 This decoupling is what lets the API live in the cloud while the risky worker stays home.
@@ -76,7 +77,8 @@ stateDiagram-v2
 - `status` is the transcription hook. `resolved` (boolean) is the *separate* hook meaning
   "the real ID/URL is known" — Instagram is `resolved:true` at ingest; TikTok/Facebook become
   `resolved:true` once yt-dlp follows the redirect.
-- `read` (boolean) drives the MCP "new / unread" experience.
+- `read` (boolean) feeds `list_new_reels`. Since the "library, not inbox" reframe, search
+  covers **all** `ready` reels, read or not.
 
 ---
 
@@ -110,11 +112,12 @@ attempts         // retry counter
 processedAt      // when transcription finished
 ```
 
-**Phase 3 (optional, for smart relevance):**
+**Phase 3 adds (filled by the worker / `embed_backfill.py`):**
 
 ```
-embedding        // vector of the transcript for Atlas Vector Search
-readAt           // when surfaced/added in Claude
+embedding        // 1024 numbers: caption + note + transcript, embedded with bge-m3
+embeddingModel   // e.g. "BAAI/bge-m3@5617a9f6" — vectors are only comparable within one model
+embeddedAt       // when the vector was computed
 ```
 
 No re-architecture needed — every later field is additive.
@@ -223,31 +226,35 @@ transcript in English for uniform searching. We can store `transcriptLang` and d
 
 ---
 
-## 9. The MCP layer & the "proactive greeting" (phase 3)
+## 9. The MCP layer & vector search (phase 3)
 
-The MCP server exposes **tools** Claude can call:
+The MCP server exposes **read-only tools** Claude can call
+([`mcp_server/README.md`](mcp_server/README.md)):
 
-- `list_new_reels` — unread saves (uses the `read` flag)
-- `find_reels(topic)` — reels matching a subject / project
-- `get_reel(id)` — pull a full transcript into the conversation
-- `mark_read(id)` — so it stops resurfacing
+- `find_reels(topic)` — reels related to a topic, **by meaning and in any language** (vector search)
+- `get_reel(id)` — one reel in full, read by Claude to apply its ideas
+- `list_new_reels` — the newest unread saves
 
-**The honest caveat:** MCP is **pull-based** — the server can't *push* a message into your chat. You
-get the proactive feel via a **one-time instruction in your Claude Project**, e.g.:
+**The flow (topic-triggered RAG):** your first message states a task (*"today: SEO for our landing
+page"*) → Claude calls `find_reels` with a few focused queries → tells you which reels fit and asks
+→ on *yes*, reads them with `get_reel` and applies their ideas to the task (no transcript recap) →
+on *no*, carries on without them. That is **R**etrieval → **A**ugmented → **G**eneration.
 
-> *"At the start of each conversation, call `list_new_reels`. If any relate to this project, tell me
-> how many and which, and ask if I want to add them."*
+**The honest caveat:** MCP is **pull-based** — the server can't push into your chat. The trigger is
+a standing instruction in Claude Desktop's personal instructions (wording in the MCP README).
 
-Then Claude greets you exactly that way every session, using the project's topic as the query.
+**Relevance = vector search** (decided over keywords and over "send Claude every summary": keywords
+miss synonyms and cross-language matches; sending every summary costs tokens in every chat and grows
+with the library). Details and the measurements: [`VECTOR-SEARCH-EXPLAINED.md`](VECTOR-SEARCH-EXPLAINED.md)
+and [`shared/README.md`](shared/README.md).
 
-**Relevance — three tiers, all real:**
-1. **Keyword/text search** — works day one, cheap.
-2. **Semantic search** — embed transcripts + the project topic, rank by similarity. **MongoDB Atlas
-   has built-in Vector Search**, so no extra infra — a real reason the vision favors Atlas.
-3. **Let Claude judge** — hand it the recent unread transcripts and let it decide relevance. Zero
-   extra infra, surprisingly good. Great starting point.
-
----
+- **Model:** `bge-m3`, local (onnxruntime, no PyTorch), multilingual. Chosen by measuring it against
+  `multilingual-e5-small` on 76 real reels: 84% vs 75% of expected reels in the top 5.
+- **Write path:** the worker embeds each reel once, after transcription.
+- **Read path:** the MCP server embeds the topic with the **same** model, then Atlas `$vectorSearch`
+  (index `reels_vector`, cosine, pre-filtered on owner / `status: "ready"` / `embeddingModel`).
+- **Two relevance filters:** a measured similarity threshold in the server (0.50), then Claude's
+  own judgment — vector search always returns *something*, even when nothing is related.
 
 ## 10. Deployment topology (what runs where)
 
@@ -280,9 +287,13 @@ flowchart TB
 ## 11. Roadmap
 
 - **Phase 1 — Ingest (DONE):** API, parsing, dedup, storage, logging. Tested locally end-to-end.
-- **Phase 1.5 — Deploy:** clean the debug key-logging in `lib/auth.js`, move to Vercel + Atlas.
-- **Phase 2 — Worker:** local loop → `yt-dlp` (resolve + audio) → `faster-whisper` (transcript) →
-  update rows to `ready`; handle failures/retries; reconcile TikTok/FB duplicates.
-- **Phase 3 — MCP + surfacing:** tools (`list_new_reels`, `find_reels`, `get_reel`, `mark_read`),
-  Claude Project instruction for the proactive greeting, then semantic relevance (Atlas Vector Search).
+- **Phase 1.5 — Deploy (DONE):** Vercel + Atlas.
+- **Phase 2 — Worker (DONE):** `yt-dlp` (resolve + audio) → `faster-whisper` (transcript) → `ready`;
+  failures/retries; TikTok/FB duplicate reconciliation; Task Scheduler runs.
+- **Phase 3 — MCP + vector search (DONE):** stdio MCP server (`find_reels`, `get_reel`,
+  `list_new_reels`), local bge-m3 embeddings, Atlas Vector Search, topic-triggered RAG via Claude
+  Desktop instructions. (`mark_read` dropped by the "library, not inbox" reframe.)
+- **Next — efficiency:** "key ideas" per reel written once at save time so `get_reel` can skip the
+  full transcript; shorter search summaries. Optional: RealSaves in Claude Code, a remote (HTTP) MCP
+  server for claude.ai web/mobile.
 ```

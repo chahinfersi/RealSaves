@@ -15,3 +15,6 @@ venv/
 # The learning journal + notes are for me; the public foundation lives in
 # README.md, ARCHITECTURE.md, and worker/README.md + worker/EXPLAINED.md.
 LEARNING-LOG.md
+# Personal vector-search test set: real reel ids + my own topics. Copy
+# shared/eval_topics.example.json to create yours.
+shared/eval_topics.json
