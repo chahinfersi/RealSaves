@@ -39,7 +39,7 @@ model (bge-m3, ~2.3 GB, downloaded on first use) in the background at startup, ~
 `MONGODB_URI` and `DB_NAME` come from the project-root `.env` (same as the API and worker).
 **Whose reels** comes from the `REALSAVES_OWNER` env var: the server refuses to start
 without it. Its value is your owner name, the part before `:` in your `API_KEYS` entry
-(`<owner>:<key>`, see the root `README.md`).
+(`<owner>:<key>`, see [`../api/README.md`](../api/README.md)).
 
 In the commands below, replace the placeholders with your own values:
 

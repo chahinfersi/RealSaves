@@ -1,209 +1,121 @@
-# RealSaves — Ingest API
+# RealSaves
 
-A small, **multi-tenant** serverless API that captures short videos shared from an iOS
-Shortcut — across **Instagram, TikTok and Facebook** — and stores them in MongoDB, so a
-later MCP server can pull them into a Claude session.
+**Turn the reels you save into a knowledge base Claude can search by meaning, in any language.**
 
-The one Shortcut sits in the share sheet of every app, so the endpoint accepts whatever
-link the platform hands over and tags each save with its `platform` and its `owner`.
+I save a lot of short videos (Instagram, TikTok, Facebook) with useful ideas in them, and I
+never watch them again. RealSaves fixes that. One tap in the share sheet saves the reel. A
+local worker transcribes it and embeds it. When I start a task in Claude (*"today: SEO for our
+landing page"*), Claude finds the related reels through an MCP server, asks whether I want to
+use them, and applies their ideas.
 
-> **Status:** the ingest layer is built and **deployed** (Vercel + MongoDB Atlas), tested
-> end-to-end from the phone. Transcription isn't built yet — the schema is shaped so a
-> worker can slot in later. The `status` field is the hook (`pending → processing → ready
-> → failed`), and `resolved` tells the worker when it still needs to follow a redirect.
->
-> See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full system design and
-> [`LEARNING-LOG.md`](LEARNING-LOG.md) for the roadmap + concepts.
+Transcription and embeddings run **locally**: no paid AI API, and the audio never leaves the
+machine. The cloud parts run on free tiers (Vercel, MongoDB Atlas M0).
 
-## Multi-tenancy — one API, many users
+The project is also a **learning path**. Each phase comes with a study guide written *before*
+the code: the concepts, the decisions and their trade-offs, the pitfalls, and what we measured
+afterwards. You can read the code and the reasoning behind it side by side.
 
-Each user has their own API key. The key both **authenticates** (is it valid?) and
-**identifies** (whose reels are these?). Every save is stamped with an `owner`, and each
-user only ever reads back their own reels — same URL, same database, isolated data.
+## How it works
 
-Keys are configured in one env var, `API_KEYS`, as comma-separated `owner:key` pairs:
-
+```mermaid
+flowchart LR
+    A["📱 iOS Shortcut<br/>(share sheet)"] -->|"POST link"| B["Ingest API<br/>Vercel serverless"]
+    B -->|"store, < 1 s"| C[("MongoDB Atlas")]
+    C -->|"claim pending"| D["Local worker<br/>yt-dlp → Whisper → bge-m3"]
+    D -->|"transcript + embedding"| C
+    C -->|"$vectorSearch"| E["MCP server<br/>(local, stdio)"]
+    E <-->|"find_reels / get_reel"| F["🧠 Claude"]
 ```
-API_KEYS="fersi:6f1a…,sami:9c22…"
-```
 
-The `x-api-key` header sends **only the key** (the hex) — never the `owner:` prefix.
-
-## How each platform's link is handled
-
-| Platform | Example share-sheet link | ID in the URL? |
+| Phase | What it does | Stack |
 |---|---|---|
-| **Instagram** | `instagram.com/reel/<id>/?stkn=…` | ✅ Yes — real ID extracted immediately, URL cleaned. |
-| **TikTok** | `vt.tiktok.com/<code>/` | ❌ No — short link; real video ID is behind a redirect. |
-| **Facebook** | `facebook.com/share/r/<token>/` | ❌ No — share link; real reel ID is behind a redirect. |
+| **1. Capture** | One iOS Shortcut accepts links from every app. A serverless API parses the platform and ID, removes tracking params, deduplicates per user and stores the save | Node.js, Vercel, MongoDB Atlas |
+| **2. Transcribe** | A local worker resolves short links, downloads audio only, transcribes it and handles failures and retries | Python, yt-dlp, ffmpeg, faster-whisper |
+| **3. Search** | Each reel becomes a 1024-dim vector. An MCP server gives Claude read-only tools to search reels by meaning and read them (RAG) | bge-m3 on onnxruntime, Atlas Vector Search, MCP Python SDK |
 
-For TikTok/Facebook the POST does **no network call** (it must answer in under a second).
-It stores the save with a **provisional ID** (the short code), `resolved: false`, and
-`status: "pending"`. A later worker follows the redirect to fill in the real canonical ID
-and URL, then flips `resolved: true`. Unknown platforms (e.g. YouTube) are still **kept**
-with `status: "unparsed"` rather than rejected.
+## What you'll learn by building it
 
-## Endpoints
+Each row is a real problem this project had to solve, with where to read about it.
 
-Both live at `/api/saves` and require an `x-api-key` header matching one of the keys in
-`API_KEYS`.
-
-### `POST /api/saves`
-Body: `{ "link": string, "note"?: string }`
-
-- Detects the platform and extracts the best available ID, storing a cleaned URL (tracking
-  params like `?stkn=`, `?igsh=`, `?mibextid=`, `utm_*` are stripped; `rawUrl` keeps the original).
-- Unrecognized links are still **kept** with `dedupKey: null`, `status: "unparsed"`.
-- Deduplicates per owner on `dedupKey` (`platform:id`). Re-saving doesn't create a
-  duplicate; if a note is sent and *your* existing record has none, the note is filled in
-  (an existing note is never overwritten, and another user's rows are never touched).
-- Short, notification-friendly responses (include the detected platform):
-  - `{"ok":true,"msg":"saved","platform":"tiktok"}`
-  - `{"ok":true,"msg":"already saved","duplicate":true,"platform":"instagram"}`
-
-### `GET /api/saves`
-Query params:
-- `limit` — default `20`, clamped to `100`.
-- `unreadOnly` — `true`/`1` returns only unread saves.
-
-Returns *your* saves, newest first: `{"ok":true,"count":n,"saves":[...]}`.
-
-## Data model — `saves` collection
-
-| Field | Type | Notes |
+| Concept | The problem it solves here | Read |
 |---|---|---|
-| `owner` | string | which user this reel belongs to (from their API key) |
-| `platform` | string | `"instagram"` \| `"tiktok"` \| `"facebook"` \| `"unknown"` |
-| `contentId` | string \| null | canonical ID (Instagram) or provisional short code (TikTok/Facebook); `null` when unparsed |
-| `dedupKey` | string \| null | `"<platform>:<contentId>"`; part of the unique key. `null` for unparsed saves |
-| `resolved` | boolean | `true` when `contentId`/`url` are canonical; `false` = worker still needs to follow the redirect |
-| `url` | string | cleaned URL; provisional (== `rawUrl`) for unresolved short links |
-| `rawUrl` | string | exactly as received |
-| `note` | string \| null | optional dictated note |
-| `source` | string | `"ios-shortcut"` |
-| `capturedAt` | Date | server time at ingest |
-| `status` | string | `"pending"` normally; `"unparsed"` when the link couldn't be parsed |
-| `read` | boolean | `false` on create |
-| `transcript` | null | placeholder for the worker |
+| **Serverless ingest under a timeout** | The iOS Shortcut gives up after a few seconds, so the API stores the save and returns. All slow work happens later. The Mongo client is cached across warm invocations | [api/](api/README.md) |
+| **Multi-tenancy with API keys** | One key both authenticates the user and identifies them. Every row has an `owner`, and dedup is a *partial* unique index on `{owner, dedupKey}` | [api/](api/README.md) |
+| **Messy real-world input** | TikTok and Facebook share links hide the real video ID behind a redirect. The ID is stored as provisional, resolved later, and duplicates are merged when the same video arrives through two different links | [ARCHITECTURE §6](ARCHITECTURE.md) |
+| **A job queue on a plain database** | A `status` state machine with an atomic claim (`findOneAndUpdate`). Stale jobs are reclaimed after a crash, attempts are capped, and failures keep their reason | [worker/EXPLAINED](worker/EXPLAINED.md) |
+| **Where to run what** | Only the local worker ever contacts the platforms, from a home IP. Datacenter IPs get blocked; the cloud API never scrapes | [ARCHITECTURE §8](ARCHITECTURE.md) |
+| **Local speech-to-text** | Whisper model sizes, CPU int8 vs GPU, language auto-detection, timestamped segments | [ARCHITECTURE §7](ARCHITECTURE.md) |
+| **Embeddings & cosine similarity** | Turning meaning into numbers, so a query like "SEO" also finds a reel in Arabic about "ranking on Google" | [VECTOR-SEARCH-EXPLAINED](VECTOR-SEARCH-EXPLAINED.md) |
+| **Running a model without PyTorch** | bge-m3 as ONNX on `onnxruntime`, pinned to a commit, because vectors are only comparable within one model | [shared/](shared/README.md) |
+| **Evaluating retrieval** | Choosing a model and threshold *by measuring on your own data* instead of guessing (see the numbers below) | [shared/](shared/README.md) |
+| **MCP from scratch** | What a host, client, server and tool are; JSON-RPC over stdio; read-only tools; why the server can't push into a chat | [PHASE3-EXPLAINED](PHASE3-EXPLAINED.md), [mcp_server/EXPLAINED](mcp_server/EXPLAINED.md) |
+| **RAG, end to end** | Retrieve the related reels, ask the user, then let Claude apply them to the task without just recapping the transcript | [VECTOR-SEARCH-EXPLAINED §6](VECTOR-SEARCH-EXPLAINED.md) |
 
-A **unique, partial** index on `{ owner, dedupKey }` enforces per-user dedup — two users
-can each save the same reel. It's *partial* (only where `dedupKey` is a string) so any
-number of unparsed rows (null `dedupKey`) are allowed per owner. Created automatically on
-first DB connection.
+### Suggested reading order
 
-**Two "to-do" flags for the worker:** `resolved: false` means "follow the redirect to get
-the real ID/URL" (TikTok/Facebook); `status: "pending"` means "still needs transcription."
-Instagram saves come in already `resolved: true`.
+1. [`ARCHITECTURE.md`](ARCHITECTURE.md): the whole system, the status state machine and the schema
+2. [`worker/EXPLAINED.md`](worker/EXPLAINED.md): how the worker's files and functions call each other, with diagrams
+3. [`PHASE3-EXPLAINED.md`](PHASE3-EXPLAINED.md): MCP concepts, then one request traced arrow by arrow
+4. [`VECTOR-SEARCH-EXPLAINED.md`](VECTOR-SEARCH-EXPLAINED.md): embeddings, vector indexes, RAG, the decisions and the pitfalls
+5. [`vector-search-illustration.html`](vector-search-illustration.html): a clickable walkthrough of the data flow (download it and open it in a browser)
+6. [`shared/playground.py`](shared/playground.py): your first hands-on experiment. It embeds Arabic, French and English sentences and prints their similarity, with no database needed
 
-## Project structure
+## Decisions, with numbers
+
+- **Vector search over keywords or "send Claude every summary".** Keywords miss synonyms and
+  cross-language matches. Sending every summary costs about 4k tokens in *every* chat, and that
+  grows with the library. Vector search sends only the few closest reels.
+- **bge-m3 over multilingual-e5-small**, measured on 76 real reels (English + Arabic dialects)
+  and 12 topics:
+
+  | Model | Dims | Expected reels in top 5 | Avg similarity, relevant vs other |
+  |---|---|---|---|
+  | multilingual-e5-small | 384 | 75% | 0.85 vs 0.80 |
+  | **bge-m3** | 1024 | **84%** | **0.58 vs 0.41** |
+
+  The second column matters as much as the first. e5-small gives every reel a similar score,
+  so no threshold separates relevant reels from unrelated ones.
+- **Local Whisper (`small`, CPU int8) over a hosted API.** It is free and private, and fast
+  enough for 15–90 s clips running in the background.
+
+## Run it yourself
+
+You need Node 20+, Python 3.12+, ffmpeg, a free MongoDB Atlas cluster and Claude Desktop. An
+iPhone is optional; `curl` works for saving links too. Set it up in this order:
+
+1. **Ingest API**: [`api/README.md`](api/README.md) (run locally or deploy to Vercel, plus the iOS Shortcut)
+2. **Worker**: [`worker/README.md`](worker/README.md) (`python worker/worker.py`)
+3. **Vector search**: [`shared/README.md`](shared/README.md) (embed your reels, create the Atlas index)
+4. **MCP server**: [`mcp_server/README.md`](mcp_server/README.md) (connect it to Claude Desktop, add the trigger instruction)
+
+## Project layout
 
 ```
-api/saves.js        # single handler, branches on req.method (GET | POST)
-lib/db.js           # cached MongoClient across warm invocations + ensures index
-lib/auth.js         # x-api-key -> owner (multi-tenant)
-lib/parseLink.js    # platform detection + ID extraction + URL cleaning (has a self-test)
-dev-server.js       # local-only HTTP server (not used by Vercel) — `npm run local`
-.env.example        # MONGODB_URI, DB_NAME, API_KEYS
-vercel.json         # function config
-worker/             # Phase 2: local yt-dlp + Whisper + embeddings (Python) — worker/README.md
-mcp_server/         # Phase 3: MCP server Claude Desktop connects to — mcp_server/README.md
-shared/             # Phase 3: embedding model + evaluation, used by worker and MCP server
+api/, lib/          # Phase 1: ingest API (Node, Vercel)
+worker/             # Phase 2: resolve + transcribe + embed (Python, runs locally)
+shared/             # Phase 3: embedding model, evaluation, vector index (worker + MCP server)
+mcp_server/         # Phase 3: MCP server for Claude Desktop
 ARCHITECTURE.md     # full system design
-PHASE3-EXPLAINED.md, VECTOR-SEARCH-EXPLAINED.md   # study guides (MCP; embeddings + RAG)
-vector-search-illustration.html                   # clickable data-flow walkthrough
-LEARNING-LOG.md     # roadmap + concepts learned
+*-EXPLAINED.md      # study guides
 ```
 
-## Environment variables
+## Status
 
-| Name | Example | Notes |
-|---|---|---|
-| `MONGODB_URI` | `mongodb+srv://user:pass@cluster0.xxxx.mongodb.net/...` | Atlas connection string (or `mongodb://127.0.0.1:27017` locally) |
-| `DB_NAME` | `reelsaves` | database name (created lazily on first write) |
-| `API_KEYS` | `fersi:6f1a…,sami:9c22…` | comma-separated `owner:key` pairs |
+Phases 1–3 are built and working end to end. **Next:** write the "key ideas" of each reel once at save
+time, so Claude can read a short summary instead of the full transcript. After that: a remote
+(HTTP) MCP server for claude.ai web and mobile.
 
-Generate a strong key:
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
+**Known limits:** Whisper `small` struggles with some Arabic dialects (Claude usually recovers
+the meaning from context). Facebook sometimes shows a login wall, and those reels are marked
+`failed`. MCP is pull-based, so Claude searches when your first message triggers it, not on
+its own.
 
-## Run locally
+## Responsible use
 
-```bash
-npm install
-cp .env.example .env      # then edit: MONGODB_URI, DB_NAME, API_KEYS
-npm run local             # http://localhost:3000/api/saves against your .env
-```
-Sanity-check the parser without any DB:
-```bash
-npm run test:parse
-```
+RealSaves is a personal tool. It downloads audio only from videos you chose to save, keeps
+only the transcript, and is meant for low-volume personal use. Respect each platform's terms
+and the creators' rights.
 
-## Deploy (GitHub → Vercel)
+## License
 
-1. Push the repo to GitHub.
-2. Vercel → **Add New… → Project** → import the repo. **Framework Preset: Other**, no build step.
-3. Add the three env vars (`MONGODB_URI`, `DB_NAME`, `API_KEYS`) for **Production**.
-4. In Atlas → **Network Access**, allow `0.0.0.0/0` (Vercel IPs rotate; the DB password is the real lock).
-5. **Deploy.** Every `git push` auto-deploys after that.
-
-**Three gotchas worth remembering:**
-- **Env vars are baked at deploy time** — change one → **redeploy** for it to take effect.
-- **Use the production URL** (`https://real-saves.vercel.app/api/saves`), not the immutable
-  `…-<hash>-….vercel.app` deployment URL (which is frozen to an old build).
-- **Deployment Protection** (Settings → Deployment Protection → Vercel Authentication) must
-  be **off** for a public API — your `x-api-key` is the real auth.
-
-## Onboard another user (multi-tenant)
-
-1. Generate a fresh key: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
-2. **Edit** `API_KEYS` in Vercel — append the new pair: `fersi:xxx,sami:<newkey>`.
-3. **Redeploy.**
-4. Give them: the production URL, their key (**just the hex, no `owner:` prefix**), and the Shortcut.
-
-Their saves are stamped `owner: "sami"` and stay isolated from everyone else. To revoke a
-user, remove their `owner:key` pair and redeploy.
-
-## Test it
-
-PowerShell (Windows):
-```powershell
-$base = "https://real-saves.vercel.app/api/saves"
-$hdr  = @{ "x-api-key" = "<your hex key>" }
-
-# save
-Invoke-RestMethod -Method Post -Uri $base -Headers $hdr -ContentType "application/json" `
-  -Body '{"link":"https://www.instagram.com/reel/DdhRKxUjxnd/?stkn=abc","note":"great hook"}'
-
-# list your reels, unread only
-Invoke-RestMethod -Uri "$base`?limit=10&unreadOnly=true" -Headers $hdr
-```
-
-curl (macOS/Linux/Git Bash):
-```bash
-KEY="<your hex key>"; BASE="https://real-saves.vercel.app"
-curl -X POST "$BASE/api/saves" -H "x-api-key: $KEY" -H "content-type: application/json" \
-  -d '{"link":"https://vt.tiktok.com/ZSbRaJKpf/"}'
-# {"ok":true,"msg":"saved","platform":"tiktok"}
-
-curl "$BASE/api/saves?limit=10" -H "x-api-key: $KEY"
-```
-
-Auth failure (missing/wrong key) → `401 {"ok":false,"msg":"unauthorized"}`.
-
-## iOS Shortcut (capture)
-
-1. **Receive** from the share sheet (URLs).
-2. **Get URLs from Input** — extracts a clean URL (fixes the "RTF → URL" error).
-3. **Get Contents of URL:**
-   - URL: `https://real-saves.vercel.app/api/saves`
-   - Method: `POST`
-   - Header: `x-api-key` = your key
-   - Request Body: **JSON** → `link` = the URL from step 2
-4. **Show Notification** with *Contents of URL* to see `saved` / `already saved`.
-
-## Notes
-- The POST handler does no blocking work and responds well under a second, so the
-  Shortcut's short background timeout is respected.
-- The Mongo connection is cached on a global and reused across warm invocations (the
-  standard serverless pattern; avoids exhausting the Atlas connection pool).
+[MIT](LICENSE): use it, change it, learn from it.

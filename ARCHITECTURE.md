@@ -93,7 +93,7 @@ note, source, capturedAt, status, read, transcript
 
 Every save carries an **`owner`** (from the user's API key). The unique index is compound
 `{owner, dedupKey}` and *partial* (only where `dedupKey` is a string), so each user dedups
-within their own reels and unparsed rows never collide. See `README.md` for the multi-tenant
+within their own reels and unparsed rows never collide. See [`api/README.md`](api/README.md) for the multi-tenant
 auth model (`API_KEYS` = `owner:key` pairs).
 
 **Phase 2 adds (filled by the worker, mostly free from yt-dlp's metadata):**

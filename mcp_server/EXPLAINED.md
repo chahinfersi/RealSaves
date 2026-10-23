@@ -50,9 +50,9 @@ sequenceDiagram
     CD->>S: starts python.exe server.py<br/>(with env REALSAVES_OWNER)
     S->>DB: import db → loads .env (file-relative path)
     S->>DB: get_owner()
-    DB-->>S: "fersi"  (or RuntimeError → server exits)
+    DB-->>S: "alice"  (or RuntimeError → server exits)
     S->>S: register tools: docstrings → descriptions,<br/>type hints → input schemas,<br/>return models → output schemas
-    S-->>CD: stderr: "starting (stdio) for owner='fersi'"
+    S-->>CD: stderr: "starting (stdio) for owner='alice'"
     CD->>S: initialize + tools/list
     S-->>CD: 2 tools (list_new_reels, get_reel)
 ```

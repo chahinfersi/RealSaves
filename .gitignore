@@ -18,3 +18,5 @@ LEARNING-LOG.md
 # Personal vector-search test set: real reel ids + my own topics. Copy
 # shared/eval_topics.example.json to create yours.
 shared/eval_topics.json
+# Social-media content series: plan, scripts, raw recordings. Private, never pushed.
+content/

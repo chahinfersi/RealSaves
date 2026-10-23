@@ -418,7 +418,7 @@ sequenceDiagram
     S-->>CD: "hi, I'm realsaves"
     CD->>S: tools/list
     S-->>CD: 2 tools: names, descriptions, schemas
-    Note over CD: Desktop keeps this catalogue in memory.<br/>(Same for Apify and every other server/connector.)
+    Note over CD: Desktop keeps this catalogue in memory.<br/>(Same for every other server/connector.)
 ```
 
 Nothing has happened in the chat yet. Desktop just knows "realsaves offers these 2 tools".
@@ -462,7 +462,7 @@ and our server is only involved in one of them.
 
 ### 9.4 "Tool search": why the first step was a search
 
-You have **many** tools connected: Apify, Gmail, Canva, Higgs, Motion… plus ours. Each tool
+You have **many** tools connected: email, calendar, design tools… plus ours. Each tool
 comes with a description + schema. Sending **all of them** to the model on **every** message
 would waste a lot of its context window (its working memory).
 

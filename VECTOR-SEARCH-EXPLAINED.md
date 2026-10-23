@@ -268,7 +268,7 @@ A `saves` row gains two fields:
 
 ```json
 {
-  "_id": "…", "owner": "fersi", "status": "ready",
+  "_id": "…", "owner": "alice", "status": "ready",
   "caption": "…", "note": "…", "transcript": "…",
   "embedding": [0.0213, -0.0871, 0.0442, "…1021 more"],
   "embeddingModel": "BAAI/bge-m3@5617a9f6"
@@ -298,14 +298,14 @@ The **query** the MCP server runs (an aggregation pipeline, like `find()` but wi
       "queryVector": [0.0187, -0.0912, "…"],
       "numCandidates": 100,
       "limit": 5,
-      "filter": { "owner": "fersi", "status": "ready", "embeddingModel": "BAAI/bge-m3@5617a9f6" }
+      "filter": { "owner": "alice", "status": "ready", "embeddingModel": "BAAI/bge-m3@5617a9f6" }
   }},
   { "$project": { "caption": 1, "transcript": 1, "score": { "$meta": "vectorSearchScore" } } }
 ]
 ```
 
 **Read it as:** "in the `reels_vector` index, look at ~100 neighbours of this query vector, only
-among fersi's ready reels embedded by the current model, return the best 5, and attach each one's
+among alice's ready reels embedded by the current model, return the best 5, and attach each one's
 similarity score."
 
 ---

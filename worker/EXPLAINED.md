@@ -89,7 +89,7 @@ by step.** A short link becomes rich metadata, then an audio file, then text.
 
 ```mermaid
 flowchart LR
-    A["a URL string<br/>vt.tiktok.com/ZSbRaJKpf/"]
+    A["a URL string<br/>vt.tiktok.com/ZSabc1234/"]
       -->|extract_info| B["info dict<br/>{id, title, uploader,<br/>duration, thumbnail}"]
     B -->|reconcile in db| C["row updated<br/>dedupKey = tiktok:7678…<br/>resolved = true"]
     A -->|download_audio| D["a file<br/>tmp/7678….mp3"]
